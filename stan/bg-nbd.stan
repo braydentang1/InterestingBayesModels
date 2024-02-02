@@ -18,26 +18,29 @@ data {
     array[N_customers] int<lower=0> recency;
     array[N_customers] int<lower=0> frequency;
     array[N_customers] int<lower=0> T_age;
-
 }
 parameters {
-    array[N_customers] real<lower=0, upper=1> p;
-    array[N_customers] real<lower=0> lambda;
-    real<lower=0> beta_a;
-    real<lower=0> beta_b;
+    vector<lower=0>[N_customers] lambda;
+    vector[N_customers] z;
+    real p_logit_mu;
+    real<lower=0> p_logit_sigma;
     real<lower=0> gamma_alpha;
     real<lower=0> gamma_beta;
 }
 transformed parameters {
+    vector[N_customers] p;
+    vector[N_customers] p_logit;
+    p_logit = p_logit_mu + p_logit_sigma * z;
+    p = inv_logit(p_logit);
 }
 model {
     // priors
     lambda ~ gamma(gamma_alpha, gamma_beta);
-    p ~ beta(beta_a, beta_b);
     gamma_alpha ~ normal(0, 2.5);
     gamma_beta ~ normal(0, 2.5);
-    beta_a ~ normal(1, 5);
-    beta_b ~ normal(1, 5);
+    p_logit_sigma ~ student_t(3, 0, 1);
+    p_logit_mu ~ student_t(3, 0, 1);
+    z ~ std_normal();
 
     // loglikelihood
     if (prior_only != 1) {
@@ -47,5 +50,4 @@ model {
     }
 }
 generated quantities {
-   
 }
