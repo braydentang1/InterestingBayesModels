@@ -15,9 +15,10 @@ functions {
 data {
     int<lower=0> prior_only;
     int<lower=0> N_customers;
-    array[N_customers] int<lower=0> recency
+    array[N_customers] int<lower=0> recency;
     array[N_customers] int<lower=0> frequency;
     array[N_customers] int<lower=0> T_age;
+
 }
 parameters {
     array[N_customers] real<lower=0, upper=1> p;
@@ -35,8 +36,8 @@ model {
     p ~ beta(beta_a, beta_b);
     gamma_alpha ~ normal(0, 2.5);
     gamma_beta ~ normal(0, 2.5);
-    beta_a ~ normal(0, 2.5);
-    beta_b ~ normal(0, 2.5);
+    beta_a ~ normal(1, 5);
+    beta_b ~ normal(1, 5);
 
     // loglikelihood
     if (prior_only != 1) {
@@ -44,4 +45,7 @@ model {
         target += bg_nbd_log_density(p[i], lambda[i], frequency[i], T_age[i], recency[i]);
       }
     }
+}
+generated quantities {
+   
 }
