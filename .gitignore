@@ -1,6 +1,8 @@
 # data
 data/*
 
+stan/bg-nbd.o
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
