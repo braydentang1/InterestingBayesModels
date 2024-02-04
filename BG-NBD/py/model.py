@@ -98,7 +98,7 @@ class BG_NBD:
     def diagnostics(self):
         return self.config["samples"].diagnose()
     
-    def summary_table(self, sort_by: Optional[List[str]] = "R_hat", ascending=False):
+    def summary_table(self, sort_by: Optional[List[str]] = "R_hat", ascending: bool = False):
         return self.config["samples"].summary().sort_values(by=sort_by, ascending=ascending)
 
 
