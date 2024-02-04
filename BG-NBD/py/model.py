@@ -3,7 +3,7 @@ import cmdstanpy as cmd
 import pandas as pd
 import pickle
 from joblib import Parallel, delayed
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Union, Iterable
 
 
 class BG_NBD:
@@ -14,17 +14,23 @@ class BG_NBD:
         self._customer_id_to_index = None
         self._samples = None
         self._draws = None
+        self.train_predictive_distribution = None
         self.random_state = np.random.default_rng(seed=self._seed)
 
     @property
     def config(self):
         return {
-            "data_dict": self._data_dict,
             "seed": self._seed,
+            "model": self._model,
+        }
+
+    @property
+    def fit_config(self):
+        return {
+            "data_dict": self._data_dict,
             "customer_id_to_index": self._customer_id_to_index,
             "samples": self._samples,
             "draws": self._draws,
-            "model": self._model,
         }
 
     def fit(
@@ -51,13 +57,12 @@ class BG_NBD:
         self._draws = self._samples.draws(concat_chains=True)
 
     def simulate_for_customer_id(
-        self, customer_id: int, max_time_weeks: Optional[int] = None
+        self, customer_id: int
     ) -> Dict[Tuple[int, List[int]], List[List[float]]]:
-        """Simulate from the prior/posterior predictive distribution for a given customer id.
+        """Simulate from the prior/posterior predictive distribution for a given customer id, from time 0.
 
         Args:
             customer_id (int): Customer id/row identifier.
-            max_time_weeks (Optional[int]): Optional max number of weeks in the future to simulate.
 
         Raises:
             AttributeError: if .fit() isn't run first, will raise an error.
@@ -65,52 +70,39 @@ class BG_NBD:
         Returns:
             Dict[int, List[List[float]]]: dictionary of simulated arrival times of transactions for the given customer_id.
         """
-        if self.config["samples"] is None:
+        if self.fit_config["samples"] is None:
             raise AttributeError("No samples found. Run .fit() on data first.")
-        max_time_weeks = 1e6 if max_time_weeks is None else max_time_weeks
-        self.simulations = {}
-        if self.simulations.get(customer_id) is not None:
-            return self.simulations[customer_id]
-        else:
-            customer_specific_params = _get_parameters_for_customer(
-                customer_id,
-                self.config["customer_id_to_index"],
-                self.config["draws"],
-                self.config["samples"].column_names,
-            )
-            sims = []
-            for p, lamb in zip(
-                customer_specific_params["p"],
-                customer_specific_params["lambda"],
-                strict=True,
-            ):
-                arrival_time_sims = []
-                time = self.random_state.exponential(1 / lamb)
-                alive = True
-                while alive:
-                    arrival_time_sims.append(time)
-                    next_arrival_time = self.random_state.exponential(1 / lamb)
-                    time += next_arrival_time
-                    alive = self.random_state.uniform(0, 1) >= p
-                if max_time_weeks is not None:
-                    sims.append(
-                        [time for time in arrival_time_sims if time <= max_time_weeks]
-                    )
-                else:
-                    sims.append(arrival_time_sims)
-                self.simulations[customer_id] = sims
-            return self.simulations[customer_id]
+        customer_specific_params = _get_parameters_for_customer(
+            customer_id,
+            self.fit_config["customer_id_to_index"],
+            self.fit_config["draws"],
+            self.fit_config["samples"].column_names,
+        )
+        sims = []
+        for p, lamb in zip(
+            customer_specific_params["p"],
+            customer_specific_params["lambda"],
+            strict=True,
+        ):
+            arrival_time_sims = []
+            time = self.random_state.exponential(1 / lamb)
+            alive = True
+            while alive:
+                arrival_time_sims.append(time)
+                next_arrival_time = self.random_state.exponential(1 / lamb)
+                time += next_arrival_time
+                alive = self.random_state.uniform(0, 1) >= p
+            sims.append(arrival_time_sims)
+        return sims
 
     def predict(
         self,
-        max_time_weeks: int,
         n_jobs: int = 1,
         newdata: Optional[pd.DataFrame] = None,
     ) -> Dict[int, List[List[float]]]:
-        """Draw from the prior/posterior predictive distribution.
+        """Draw from the prior/posterior predictive distribution from time 0.
 
         Args:
-            max_time_weeks (int): Max number of weeks to simulate.
             n_jobs (int, optional): Number of jobs when simulating in parallel. Defaults to 1.
             newdata (Optional[pd.DataFrame], optional): pandas dataframe that contains customer ids. If customer ids cannot be found in the training dataset,
             simulations are drawn at the population level. Defaults to None.
@@ -118,27 +110,50 @@ class BG_NBD:
         Returns:
             Dict[int, List[List[float]]]: dictionary with customer ids as keys and lists of simulated transactions as values
         """
-        max_time_weeks = 1e6 if max_time_weeks is None else max_time_weeks
+        customer_keys_train = self.fit_config["customer_id_to_index"].keys()
         if newdata is None:
-            customer_keys = self.config["customer_id_to_index"].keys()
-            sims = Parallel(n_jobs=n_jobs)(
-                delayed(lambda x, y: self.simulate_for_customer_id(x, y))(
-                    idx, max_time_weeks
+            if self.train_predictive_distribution is None:
+                all_sims = Parallel(n_jobs=n_jobs)(
+                    delayed(lambda x: self.simulate_for_customer_id(x))(idx)
+                    for idx in customer_keys_train
                 )
-                for idx in customer_keys
-            )
-
-            return {idx: sim for idx, sim in zip(customer_keys, sims, strict=True)}
+                self.train_predictive_distribution = {
+                    idx: sim
+                    for idx, sim in zip(customer_keys_train, all_sims, strict=True)
+                }
+                return self.train_predictive_distribution
+            else:
+                return self.train_predictive_distribution
         # TODO: if newdata, check if ids are in customer_id_to_index. If not, then simulate those observations from the population parameters.
 
+    @staticmethod
+    def filter_sims_at_min_time(
+        min_time_weeks: Union[int, List[int]], sims: Dict[int, List[List[float]]]
+    ) -> Dict[int, List[List[float]]]:
+        """Filters a dictionary of simulations at a specific point in time.
+
+        Args:
+            min_time_weeks (Union[int, List[int]]): filter simulations for all transactions after this point
+            sims (Dict[int, List[List[float]]]): dictionary of simulations, the result of running .predict()
+
+        Returns:
+            Dict[int, List[List[float]]]: copy of sims with transactions that occur only after min_time_weeks.
+        """
+        filtered_sims = {}
+        for customer_id, si in sims.items():
+            filtered_sims[customer_id] = [
+                [time for time in sim if time >= min_time_weeks] for sim in si
+            ]
+        return filtered_sims
+
     def diagnostics(self):
-        return self.config["samples"].diagnose()
+        return self.fit_config["samples"].diagnose()
 
     def summary_table(
         self, sort_by: Optional[List[str]] = "R_hat", ascending: bool = False
     ):
         return (
-            self.config["samples"]
+            self.fit_config["samples"]
             .summary()
             .sort_values(by=sort_by, ascending=ascending)
         )
