@@ -51,7 +51,7 @@ class BG_NBD:
     def simulate_for_customer_id(
         self,
         customer_id: int,
-        time_interval: Optional[List[int]]
+        time_interval: Optional[List[int]] = None
         ) -> Dict[int, List[List[float]]]:
         """Simulate from the prior/posterior predictive distribution for a given customer id, from time 0.
 
