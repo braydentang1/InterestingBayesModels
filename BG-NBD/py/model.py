@@ -52,7 +52,7 @@ class BG_NBD:
         self,
         customer_id: int,
         time_interval: Optional[List[int]] = None
-        ) -> Dict[int, List[List[float]]]:
+        ) -> Dict[Tuple[int, List[int]], List[List[float]]]:
         """Simulate from the prior/posterior predictive distribution for a given customer id, from time 0.
 
         Args:
@@ -68,8 +68,8 @@ class BG_NBD:
         if self.config["samples"] is None:
             raise AttributeError("No samples found. Run .fit() on data first.")
         self.simulations = {}
-        if self.simulations.get(customer_id) is not None and time_interval is None:
-            return self.simulations[customer_id]
+        if self.simulations.get((customer_id, time_interval)) is not None:
+            return self.simulations[(customer_id, time_interval)]
         else:
             customer_specific_params = _get_parameters_for_customer(
                 customer_id,
@@ -92,8 +92,8 @@ class BG_NBD:
                     sims.append([time for time in arrival_time_sims if time <= time_interval_sorted[1] and time >= time_interval_sorted[0]])
                 else:
                     sims.append(arrival_time_sims)
-                self.simulations[customer_id] = sims
-            return self.simulations[customer_id]
+                self.simulations[(customer_id, time_interval)] = sims
+            return self.simulations[(customer_id, time_interval)]
 
     def diagnostics(self):
         return self.config["samples"].diagnose()
