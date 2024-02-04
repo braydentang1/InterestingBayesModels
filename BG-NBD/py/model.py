@@ -51,13 +51,13 @@ class BG_NBD:
     def simulate_for_customer_id(
         self,
         customer_id: int,
-        time_interval: Optional[List[int]] = None
+        max_time_weeks: Optional[List[int]] = None
         ) -> Dict[Tuple[int, List[int]], List[List[float]]]:
         """Simulate from the prior/posterior predictive distribution for a given customer id, from time 0.
 
         Args:
             customer_id (int): Customer id/row identifier.
-            time_interval (Optional[List[Optional[int], Optional[int]]]): Optional list of times to filter for.
+            max_time_weeks (Optional[List[int]]): Number of weeks in the future to simulate.
 
         Raises:
             AttributeError: if .fit() isn't run first, will raise an error.
@@ -68,8 +68,8 @@ class BG_NBD:
         if self.config["samples"] is None:
             raise AttributeError("No samples found. Run .fit() on data first.")
         self.simulations = {}
-        if self.simulations.get((customer_id, time_interval)) is not None:
-            return self.simulations[(customer_id, time_interval)]
+        if self.simulations.get(customer_id) is not None:
+            return self.simulations[customer_id]
         else:
             customer_specific_params = _get_parameters_for_customer(
                 customer_id,
@@ -87,13 +87,12 @@ class BG_NBD:
                     next_arrival_time = self.random_state.exponential(1/lamb)
                     time += next_arrival_time
                     alive = self.random_state.uniform(0, 1) >= p
-                if time_interval is not None:
-                    time_interval_sorted = sorted(time_interval) 
-                    sims.append([time for time in arrival_time_sims if time <= time_interval_sorted[1] and time >= time_interval_sorted[0]])
+                if max_time_weeks is not None:
+                    sims.append([time for time in arrival_time_sims if time <= max_time_weeks])
                 else:
                     sims.append(arrival_time_sims)
-                self.simulations[(customer_id, time_interval)] = sims
-            return self.simulations[(customer_id, time_interval)]
+                self.simulations[customer_id] = sims
+            return self.simulations[customer_id]
 
     def diagnostics(self):
         return self.config["samples"].diagnose()
