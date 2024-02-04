@@ -68,7 +68,7 @@ class BG_NBD:
         if self.config["samples"] is None:
             raise AttributeError("No samples found. Run .fit() on data first.")
         self.simulations = {}
-        if self.simulations.get(customer_id) is not None:
+        if self.simulations.get(customer_id) is not None and time_interval is None:
             return self.simulations[customer_id]
         else:
             customer_specific_params = _get_parameters_for_customer(
