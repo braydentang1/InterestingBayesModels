@@ -104,8 +104,8 @@ class BG_NBD:
     def simulate_dataset(
         self,
         max_time_weeks: int,
+        n_jobs: int = 1,
         newdata: Optional[pd.DataFrame] = None,
-        n_jobs: Optional[int] = None,
     ):
         max_time_weeks = 1e6 if max_time_weeks is None else max_time_weeks
         if newdata is None:
