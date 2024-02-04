@@ -106,18 +106,18 @@ class BG_NBD:
         max_time_weeks: int,
         n_jobs: int = 1,
         newdata: Optional[pd.DataFrame] = None,
-    ):
+    ) -> Dict[int, List[List[float]]]:
         max_time_weeks = 1e6 if max_time_weeks is None else max_time_weeks
         if newdata is None:
-            sims = {
-                Parallel(n_jobs=n_jobs)(
-                    delayed(lambda x, y: {x: self.simulate_for_customer_id(x, y)})(
-                        idx, max_time_weeks
-                    )
-                    for idx in self.config["customer_id_to_index"].keys()
+            customer_keys = self.config["customer_id_to_index"].keys()
+            sims = Parallel(n_jobs=n_jobs)(
+                delayed(lambda x, y: self.simulate_for_customer_id(x, y))(
+                    idx, max_time_weeks
                 )
-            }
-            return sims
+                for idx in customer_keys
+            )
+
+            return {idx: sim for idx, sim in zip(customer_keys, sims, strict=True)}
         # TODO: if newdata, check if ids are in customer_id_to_index. If not, then simulate those observations from the population parameters.
 
     def diagnostics(self):
