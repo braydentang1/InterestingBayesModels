@@ -1,6 +1,7 @@
 import numpy as np
 import cmdstanpy as cmd
 import pandas as pd
+import pickle 
 from typing import Dict, Optional, List, Tuple
 
 
@@ -51,13 +52,13 @@ class BG_NBD:
     def simulate_for_customer_id(
         self,
         customer_id: int,
-        max_time_weeks: Optional[List[int]] = None
+        max_time_weeks: Optional[int] = None
         ) -> Dict[Tuple[int, List[int]], List[List[float]]]:
         """Simulate from the prior/posterior predictive distribution for a given customer id, from time 0.
 
         Args:
             customer_id (int): Customer id/row identifier.
-            max_time_weeks (Optional[List[int]]): Number of weeks in the future to simulate.
+            max_time_weeks (Optional[int]): Optional max number of weeks in the future to simulate.
 
         Raises:
             AttributeError: if .fit() isn't run first, will raise an error.
@@ -99,6 +100,11 @@ class BG_NBD:
     
     def summary_table(self, sort_by: Optional[List[str]] = "R_hat", ascending: bool = False):
         return self.config["samples"].summary().sort_values(by=sort_by, ascending=ascending)
+
+    def save_samples(self, directory: str) -> None:
+        with open(directory, "wb") as f:
+            pickle.dump(self.config["samples"], f)
+        return None
 
 
 def _get_parameters_for_customer(
