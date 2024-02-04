@@ -28,10 +28,7 @@ parameters {
     real<lower=0> gamma_beta;
 }
 transformed parameters {
-    vector[N_customers] p;
-    vector[N_customers] p_logit;
-    p_logit = p_logit_mu + p_logit_sigma * z;
-    p = inv_logit(p_logit);
+    vector[N_customers] p = inv_logit(p_logit_mu + p_logit_sigma * z);
 }
 model {
     // priors
