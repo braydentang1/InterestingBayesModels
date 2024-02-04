@@ -101,12 +101,23 @@ class BG_NBD:
                 self.simulations[customer_id] = sims
             return self.simulations[customer_id]
 
-    def simulate_dataset(
+    def predict(
         self,
         max_time_weeks: int,
         n_jobs: int = 1,
         newdata: Optional[pd.DataFrame] = None,
     ) -> Dict[int, List[List[float]]]:
+        """Draw from the prior/posterior predictive distribution.
+
+        Args:
+            max_time_weeks (int): Max number of weeks to simulate.
+            n_jobs (int, optional): Number of jobs when simulating in parallel. Defaults to 1.
+            newdata (Optional[pd.DataFrame], optional): pandas dataframe that contains customer ids. If customer ids cannot be found in the training dataset,
+            simulations are drawn at the population level. Defaults to None.
+
+        Returns:
+            Dict[int, List[List[float]]]: dictionary with customer ids as keys and lists of simulated transactions as values
+        """
         max_time_weeks = 1e6 if max_time_weeks is None else max_time_weeks
         if newdata is None:
             customer_keys = self.config["customer_id_to_index"].keys()
@@ -132,9 +143,9 @@ class BG_NBD:
             .sort_values(by=sort_by, ascending=ascending)
         )
 
-    def save_samples(self, directory: str) -> None:
+    def save(self, directory: str) -> None:
         with open(directory, "wb") as f:
-            pickle.dump(self.config["samples"], f)
+            pickle.dump(self, f)
         return None
 
 
