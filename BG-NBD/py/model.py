@@ -1,9 +1,11 @@
-import numpy as np
-import cmdstanpy as cmd
-import pandas as pd
 import pickle
+from typing import Dict, Iterable, List, Optional, Tuple, Union
+
+import cmdstanpy as cmd
+import numpy as np
+import pandas as pd
 from joblib import Parallel, delayed
-from typing import Dict, Optional, List, Tuple, Union, Iterable
+from scipy.special import expit
 
 
 class BG_NBD:
@@ -57,12 +59,13 @@ class BG_NBD:
         self._draws = self._samples.draws(concat_chains=True)
 
     def simulate_for_customer_id(
-        self, customer_id: int
+        self, customer_id: int, seed: int
     ) -> Dict[Tuple[int, List[int]], List[List[float]]]:
         """Simulate from the prior/posterior predictive distribution for a given customer id, from time 0.
 
         Args:
             customer_id (int): Customer id/row identifier.
+            seed (int): integer seed to simulate parameters when a customer id is not found in the training data.
 
         Raises:
             AttributeError: if .fit() isn't run first, will raise an error.
@@ -77,6 +80,7 @@ class BG_NBD:
             self.fit_config["customer_id_to_index"],
             self.fit_config["draws"],
             self.fit_config["samples"].column_names,
+            seed,
         )
         sims = []
         for p, lamb in zip(
@@ -97,34 +101,26 @@ class BG_NBD:
 
     def predict(
         self,
+        newdata: pd.DataFrame,
         n_jobs: int = 1,
-        newdata: Optional[pd.DataFrame] = None,
     ) -> Dict[int, List[List[float]]]:
         """Draw from the prior/posterior predictive distribution from time 0.
 
         Args:
             n_jobs (int, optional): Number of jobs when simulating in parallel. Defaults to 1.
-            newdata (Optional[pd.DataFrame], optional): pandas dataframe that contains customer ids. If customer ids cannot be found in the training dataset,
-            simulations are drawn at the population level. Defaults to None.
+            newdata (Optional[pd.DataFrame], optional): pandas dataframe that contains a column called customer_id. If a specific customer id
+             cannot be found in the training dataset, simulations are drawn at the population level. Defaults to None.
 
         Returns:
             Dict[int, List[List[float]]]: dictionary with customer ids as keys and lists of simulated transactions as values
         """
-        customer_keys_train = self.fit_config["customer_id_to_index"].keys()
-        if newdata is None:
-            if self.predictive_distribution_train is None:
-                all_sims = Parallel(n_jobs=n_jobs)(
-                    delayed(lambda x: self.simulate_for_customer_id(x))(idx)
-                    for idx in customer_keys_train
-                )
-                self.predictive_distribution_train = {
-                    idx: sim
-                    for idx, sim in zip(customer_keys_train, all_sims, strict=True)
-                }
-                return self.predictive_distribution_train
-            else:
-                return self.predictive_distribution_train
-        # TODO: if newdata, check if ids are in customer_id_to_index. If not, then simulate those observations from the population parameters.
+        customer_keys = set(newdata["customer_id"])
+        seeds = self.random_state.integers(low=1, high=1e9, size=len(customer_keys))
+        all_sims = Parallel(n_jobs=n_jobs)(
+            delayed(lambda x, y: self.simulate_for_customer_id(x, y))(idx, seed)
+            for idx, seed in zip(list(customer_keys), seeds)
+        )
+        return _sims_to_dict(list(customer_keys), all_sims)
 
     @staticmethod
     def filter_sims_between(
@@ -189,26 +185,61 @@ def _get_parameters_for_customer(
     customer_index_lookup: Dict[int, int],
     draws: np.ndarray,
     sample_column_names: Tuple[str],
+    seed: int,
 ) -> Dict[str, np.ndarray]:
-    id_lookup = f"[{customer_index_lookup[customer_id]}]"
-    p_array_position = [
-        idx for idx, name in enumerate(sample_column_names) if f"p{id_lookup}" in name
-    ]
-    lambda_array_position = [
-        idx
-        for idx, name in enumerate(sample_column_names)
-        if f"lambda{id_lookup}" in name
-    ]
-    return {
-        "p": draws[:, p_array_position].flatten(),
-        "lambda": draws[:, lambda_array_position].flatten(),
-    }
+    if customer_index_lookup.get(customer_id) is not None:
+        id_lookup = f"[{customer_index_lookup[customer_id]}]"
+        p_lambda_array_positions = [
+            _find_parameter_position(f"{variable}{id_lookup}", sample_column_names)
+            for variable in ["p", "lambda"]
+        ]
+        return {
+            "p": draws[:, p_lambda_array_positions[0]].flatten(),
+            "lambda": draws[:, p_lambda_array_positions[1]].flatten(),
+        }
+    else:
+        rng = np.random.default_rng(seed=seed)
+        gamma_parameters = [
+            _find_parameter_position(f"{variable}", sample_column_names)
+            for variable in ["gamma_alpha", "gamma_beta"]
+        ]
+        logit_p_parameters = [
+            _find_parameter_position(f"{variable}", sample_column_names)
+            for variable in ["p_logit_mu", "p_logit_sigma"]
+        ]
+        # Draw new lambda and p
+        new_lambda = rng.gamma(
+            draws[:, gamma_parameters[0]],
+            draws[:, gamma_parameters[1]],
+        )
+        new_p = expit(
+            rng.normal(
+                draws[:, logit_p_parameters[0]],
+                draws[:, logit_p_parameters[1]],
+            )
+        )
+
+        return {"p": new_p.flatten(), "lambda": new_lambda.flatten()}
 
 
-def _generate_customer_index_lookup(df: pd.DataFrame):
+def _generate_customer_index_lookup(df: pd.DataFrame) -> Dict[int, int]:
     return {
         customer_id: customer_index + 1
         for customer_id, customer_index in zip(
             df["customer_id"], range(0, df.shape[0]), strict=True
         )
     }
+
+
+def _find_parameter_position(
+    variable_name: str, sample_column_names: Tuple[str]
+) -> List[int]:
+    return [
+        idx for idx, name in enumerate(sample_column_names) if variable_name in name
+    ]
+
+
+def _sims_to_dict(
+    customer_ids: List[int], all_sims: List
+) -> Dict[int, List[List[float]]]:
+    return {idx: sim for idx, sim in zip(customer_ids, all_sims, strict=True)}
