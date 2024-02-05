@@ -14,7 +14,7 @@ class BG_NBD:
         self._customer_id_to_index = None
         self._samples = None
         self._draws = None
-        self.train_predictive_distribution = None
+        self.predictive_distribution_train = None
         self.random_state = np.random.default_rng(seed=self._seed)
 
     @property
@@ -112,39 +112,38 @@ class BG_NBD:
         """
         customer_keys_train = self.fit_config["customer_id_to_index"].keys()
         if newdata is None:
-            if self.train_predictive_distribution is None:
+            if self.predictive_distribution_train is None:
                 all_sims = Parallel(n_jobs=n_jobs)(
                     delayed(lambda x: self.simulate_for_customer_id(x))(idx)
                     for idx in customer_keys_train
                 )
-                self.train_predictive_distribution = {
+                self.predictive_distribution_train = {
                     idx: sim
                     for idx, sim in zip(customer_keys_train, all_sims, strict=True)
                 }
-                return self.train_predictive_distribution
+                return self.predictive_distribution_train
             else:
-                return self.train_predictive_distribution
+                return self.predictive_distribution_train
         # TODO: if newdata, check if ids are in customer_id_to_index. If not, then simulate those observations from the population parameters.
 
     @staticmethod
-    def filter_sims_at_min_time(
+    def filter_sims_between(
         min_time_weeks: Union[int, Iterable],
         sims: Dict[int, List[List[float]]],
         duration_weeks: int = 100,
     ) -> Dict[int, List[List[float]]]:
-        """Filters a dictionary of simulations at a specific point in time.
+        """Filters a dictionary of simulations between specific points in time.
 
         Args:
-            min_time_weeks (Union[int, List[int]]): filter simulations for all transactions after this point
-            sims (Dict[int, List[List[float]]]): dictionary of simulations, the result of running .predict()
+            min_time_weeks (Union[int, List[int]]): filter simulations for all transactions after this point. If given as a list,
+                changes the cutoff for each customer id in sims (in order).
+            sims (Dict[int, List[List[float]]]): dictionary of simulations for each customer, the result of running .predict()
             duration_weeks (int): how long to run the simulation for. I.e. if min_time_weeks is specified, the
                 max time that transactions are simulated to is min_time_weeks + duration_weeks. Default is 100.
 
         Returns:
             Dict[int, List[List[float]]]: copy of sims with transactions that occur only after min_time_weeks.
         """
-        min_time_weeks = 26
-        duration_weeks = 26
         min_time_weeks = (
             [min_time_weeks] * len(sims)
             if isinstance(min_time_weeks, int)
@@ -156,13 +155,15 @@ class BG_NBD:
         ]
 
         new_sims = {}
-        for (customer, sim), (min_t, max_t) in zip(
+        for (customer, sims), (min_t, max_t) in zip(
             sims.items(), time_cutoffs, strict=True
         ):
-            sims = []
-            for s in sim:
-                sims.append([time for time in s if time >= min_t and time <= max_t])
-            new_sims[customer] = sims
+            filtered_sims = []
+            for s in sims:
+                filtered_sims.append(
+                    [time for time in s if time >= min_t and time <= max_t]
+                )
+            new_sims[customer] = filtered_sims
         return new_sims
 
     def diagnostics(self):
