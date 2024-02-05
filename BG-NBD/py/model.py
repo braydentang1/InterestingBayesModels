@@ -107,9 +107,9 @@ class BG_NBD:
         """Draw from the prior/posterior predictive distribution from time 0.
 
         Args:
-            n_jobs (int, optional): Number of jobs when simulating in parallel. Defaults to 1.
-            newdata (Optional[pd.DataFrame], optional): pandas dataframe that contains a column called customer_id. If a specific customer id
-             cannot be found in the training dataset, simulations are drawn at the population level. Defaults to None.
+            newdata (pd.DataFrame): pandas dataframe that contains a column called customer_id. If a specific customer id
+             cannot be found in the training dataset, simulations are drawn at the population level.
+            n_jobs (int): Number of jobs when simulating in parallel. Defaults to 1.
 
         Returns:
             Dict[int, List[List[float]]]: dictionary with customer ids as keys and lists of simulated transactions as values
@@ -198,24 +198,21 @@ def _get_parameters_for_customer(
             "lambda": draws[:, p_lambda_array_positions[1]].flatten(),
         }
     else:
+        # THIS IS SLOW
         rng = np.random.default_rng(seed=seed)
-        gamma_parameters = [
+        parameters = [
             _find_parameter_position(f"{variable}", sample_column_names)
-            for variable in ["gamma_alpha", "gamma_beta"]
-        ]
-        logit_p_parameters = [
-            _find_parameter_position(f"{variable}", sample_column_names)
-            for variable in ["p_logit_mu", "p_logit_sigma"]
+            for variable in ["gamma_alpha", "gamma_beta", "p_logit_mu", "p_logit_sigma"]
         ]
         # Draw new lambda and p
         new_lambda = rng.gamma(
-            draws[:, gamma_parameters[0]],
-            draws[:, gamma_parameters[1]],
+            draws[:, parameters[0]],
+            draws[:, parameters[1]],
         )
         new_p = expit(
             rng.normal(
-                draws[:, logit_p_parameters[0]],
-                draws[:, logit_p_parameters[1]],
+                draws[:, parameters[2]],
+                draws[:, parameters[3]],
             )
         )
 
