@@ -89,8 +89,8 @@ class BG_NBD:
             alive = True
             while alive:
                 arrival_time_sims.append(time)
-                next_arrival_time = self.random_state.exponential(1 / lamb)
-                time += next_arrival_time
+                next_time_to_arrival = self.random_state.exponential(1 / lamb)
+                time += next_time_to_arrival
                 alive = self.random_state.uniform(0, 1) >= p
             sims.append(arrival_time_sims)
         return sims
@@ -128,23 +128,42 @@ class BG_NBD:
 
     @staticmethod
     def filter_sims_at_min_time(
-        min_time_weeks: Union[int, List[int]], sims: Dict[int, List[List[float]]]
+        min_time_weeks: Union[int, Iterable],
+        sims: Dict[int, List[List[float]]],
+        duration_weeks: int = 100,
     ) -> Dict[int, List[List[float]]]:
         """Filters a dictionary of simulations at a specific point in time.
 
         Args:
             min_time_weeks (Union[int, List[int]]): filter simulations for all transactions after this point
             sims (Dict[int, List[List[float]]]): dictionary of simulations, the result of running .predict()
+            duration_weeks (int): how long to run the simulation for. I.e. if min_time_weeks is specified, the
+                max time that transactions are simulated to is min_time_weeks + duration_weeks. Default is 100.
 
         Returns:
             Dict[int, List[List[float]]]: copy of sims with transactions that occur only after min_time_weeks.
         """
-        filtered_sims = {}
-        for customer_id, si in sims.items():
-            filtered_sims[customer_id] = [
-                [time for time in sim if time >= min_time_weeks] for sim in si
-            ]
-        return filtered_sims
+        min_time_weeks = 26
+        duration_weeks = 26
+        min_time_weeks = (
+            [min_time_weeks] * len(sims)
+            if isinstance(min_time_weeks, int)
+            else min_time_weeks
+        )
+        time_cutoffs = [
+            (x, x + y)
+            for x, y in zip(min_time_weeks, [duration_weeks] * len(sims), strict=True)
+        ]
+
+        new_sims = {}
+        for (customer, sim), (min_t, max_t) in zip(
+            sims.items(), time_cutoffs, strict=True
+        ):
+            sims = []
+            for s in sim:
+                sims.append([time for time in s if time >= min_t and time <= max_t])
+            new_sims[customer] = sims
+        return new_sims
 
     def diagnostics(self):
         return self.fit_config["samples"].diagnose()
