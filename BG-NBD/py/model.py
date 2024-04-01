@@ -83,20 +83,17 @@ class BG_NBD:
             seed,
         )
         sims = []
-        for p, lamb in zip(
-            customer_specific_params["p"],
-            customer_specific_params["lambda"],
-            strict=True,
-        ):
-            arrival_time_sims = []
-            time = self.random_state.exponential(1 / lamb)
-            alive = True
-            while alive:
-                arrival_time_sims.append(time)
-                next_time_to_arrival = self.random_state.exponential(1 / lamb)
-                time += next_time_to_arrival
-                alive = self.random_state.uniform(0, 1) >= p
-            sims.append(arrival_time_sims)
+        number_of_transactions = self.random_state.geometric(
+            customer_specific_params["p"]
+        )
+        lambda_repeated = np.repeat(
+            customer_specific_params["lambda"], number_of_transactions
+        )
+        arrival_times = self.random_state.exponential(1 / lambda_repeated)
+        start = 0
+        for n in number_of_transactions:
+            sims.append(np.cumsum(arrival_times[start : (start + n)]))
+            start += n
         return sims
 
     def predict(
@@ -198,7 +195,6 @@ def _get_parameters_for_customer(
             "lambda": draws[:, p_lambda_array_positions[1]].flatten(),
         }
     else:
-        # THIS IS SLOW
         rng = np.random.default_rng(seed=seed)
         parameters = [
             _find_parameter_position(f"{variable}", sample_column_names)
